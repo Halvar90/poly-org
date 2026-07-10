@@ -32,6 +32,12 @@
       "output": "static",
       "favicon": "./assets/images/icon.png"
     },
+    "notification": {
+      "icon": "./assets/images/icon.png",
+      "color": "#6B4EAA",
+      "vapidPublicKey": "BJJxHu60RusJD-61KN-soDQIKudbgywQthhsDBFmDodW0FS4BwWGWb5878vyUhJkncHyjkZ_s5UKNKhmmpQWJDA",
+      "serviceWorkerPath": "/expo-service-worker.js"
+    },
     "plugins": [
       "expo-router",
       [
