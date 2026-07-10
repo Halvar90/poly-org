@@ -1,0 +1,26 @@
+name: Supabase Heartbeat
+
+on:
+  schedule:
+    # Every 3 days at 06:17 UTC – well inside Supabase's 7-day free-tier
+    # auto-pause window, keeps the project counted as "active".
+    - cron: '17 6 */3 * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase health endpoint
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            "$SUPABASE_URL/auth/v1/health")
+          echo "Supabase health endpoint responded with HTTP $status"
+          if [ "$status" != "200" ]; then
+            echo "::error::Heartbeat failed with HTTP $status – project may be paused."
+            exit 1
+          fi
