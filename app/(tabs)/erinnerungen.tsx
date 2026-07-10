@@ -52,6 +52,7 @@ export default function ErinnerungenScreen() {
   const [isParsing, setIsParsing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const profileColor = profile?.color_code ?? theme.tint;
@@ -303,7 +304,47 @@ export default function ErinnerungenScreen() {
     }
   }
 
-  const openCount = useMemo(() => reminders.filter((item) => !item.is_done).length, [reminders]);
+  const openReminders = useMemo(() => reminders.filter((item) => !item.is_done), [reminders]);
+  const doneReminders = useMemo(() => reminders.filter((item) => item.is_done), [reminders]);
+  const openCount = openReminders.length;
+
+  function renderArchive() {
+    if (doneReminders.length === 0) return null;
+
+    return (
+      <View style={styles.archiveSection}>
+        <Pressable
+          onPress={() => setIsArchiveOpen((v) => !v)}
+          style={({ pressed }) => [styles.archiveHeader, { opacity: pressed ? 0.75 : 1 }]}>
+          <Ionicons
+            name={isArchiveOpen ? 'chevron-down' : 'chevron-forward'}
+            size={16}
+            color={theme.text}
+          />
+          <Text style={[styles.archiveHeaderText, { color: theme.text }]}>Archiv</Text>
+          <View style={styles.archiveBadge}>
+            <Text style={styles.archiveBadgeText}>{doneReminders.length}</Text>
+          </View>
+        </Pressable>
+
+        {isArchiveOpen ? (
+          <View style={styles.archiveList}>
+            {doneReminders.map((item) => (
+              <Pressable
+                key={item.id}
+                onPress={() => toggleReminderDone(item)}
+                style={({ pressed }) => [styles.archiveRow, { opacity: pressed ? 0.7 : 1 }]}>
+                <View style={styles.archiveDot} />
+                <Text style={[styles.archiveRowText, { color: theme.text }]} numberOfLines={1}>
+                  {item.title}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
+  }
 
   function renderReminderItem({ item }: { item: Reminder }) {
     const canManage = item.creator_id === user?.id;
@@ -537,7 +578,7 @@ export default function ErinnerungenScreen() {
         </View>
       ) : (
         <FlatList
-          data={reminders}
+          data={openReminders}
           keyExtractor={(item) => item.id}
           renderItem={renderReminderItem}
           contentContainerStyle={styles.listContent}
@@ -549,12 +590,20 @@ export default function ErinnerungenScreen() {
               colors={[profileColor]}
             />
           }
+          ListFooterComponent={renderArchive()}
           ListEmptyComponent={
-            <View style={styles.emptyWrap}>
-              <Ionicons name="bookmark-outline" size={42} color={profileColor} />
-              <Text style={[styles.emptyTitle, { color: theme.text }]}>Noch keine Erinnerungen</Text>
-              <Text style={styles.emptySubtitle}>Erstelle oben deinen ersten Merker.</Text>
-            </View>
+            reminders.length === 0 ? (
+              <View style={styles.emptyWrap}>
+                <Ionicons name="bookmark-outline" size={42} color={profileColor} />
+                <Text style={[styles.emptyTitle, { color: theme.text }]}>Noch keine Erinnerungen</Text>
+                <Text style={styles.emptySubtitle}>Erstelle oben deinen ersten Merker.</Text>
+              </View>
+            ) : (
+              <View style={styles.openEmptyState}>
+                <Ionicons name="sparkles-outline" size={28} color="#34d399" />
+                <Text style={[styles.openEmptyText, { color: theme.text }]}>Alles erledigt!</Text>
+              </View>
+            )
           }
         />
       )}
@@ -749,6 +798,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 36,
     gap: 8,
+  },
+  openEmptyState: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 8,
+  },
+  openEmptyText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  archiveSection: {
+    marginTop: 4,
+  },
+  archiveHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+  },
+  archiveHeaderText: {
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+  },
+  archiveBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(52, 211, 153, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  archiveBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0f9d64',
+  },
+  archiveList: {
+    gap: 2,
+  },
+  archiveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(128,128,128,0.2)',
+  },
+  archiveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#34d399',
+  },
+  archiveRowText: {
+    flex: 1,
+    fontSize: 13,
+    textDecorationLine: 'line-through',
+    opacity: 0.7,
   },
   emptyTitle: {
     fontSize: 16,

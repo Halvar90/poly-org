@@ -49,6 +49,7 @@ export default function AufgabenScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
 
   const profileColor = profile?.color_code ?? theme.tint;
 
@@ -155,7 +156,9 @@ export default function AufgabenScreen() {
     }).finally(() => setIsParsing(false));
   }
 
-  const completedCount = useMemo(() => tasks.filter((task) => task.is_done).length, [tasks]);
+  const openTasks = useMemo(() => tasks.filter((task) => !task.is_done), [tasks]);
+  const doneTasks = useMemo(() => tasks.filter((task) => task.is_done), [tasks]);
+  const completedCount = doneTasks.length;
 
   function renderTaskItem({ item }: { item: EventWithCreator }) {
     const canManage = item.creator_id === profile?.id;
@@ -250,6 +253,53 @@ export default function AufgabenScreen() {
     );
   }
 
+  function renderOpenEmptyState() {
+    return (
+      <View style={styles.openEmptyState}>
+        <Ionicons name="sparkles-outline" size={28} color="#34d399" />
+        <Text style={[styles.openEmptyText, { color: theme.text }]}>Alles erledigt!</Text>
+      </View>
+    );
+  }
+
+  function renderArchive() {
+    if (doneTasks.length === 0) return null;
+
+    return (
+      <View style={styles.archiveSection}>
+        <Pressable
+          onPress={() => setIsArchiveOpen((v) => !v)}
+          style={({ pressed }) => [styles.archiveHeader, { opacity: pressed ? 0.75 : 1 }]}>
+          <Ionicons
+            name={isArchiveOpen ? 'chevron-down' : 'chevron-forward'}
+            size={16}
+            color={theme.text}
+          />
+          <Text style={[styles.archiveHeaderText, { color: theme.text }]}>Archiv</Text>
+          <View style={styles.archiveBadge}>
+            <Text style={styles.archiveBadgeText}>{doneTasks.length}</Text>
+          </View>
+        </Pressable>
+
+        {isArchiveOpen ? (
+          <View style={styles.archiveList}>
+            {doneTasks.map((item) => (
+              <Pressable
+                key={item.id}
+                onPress={() => toggleTaskDone(item)}
+                style={({ pressed }) => [styles.archiveRow, { opacity: pressed ? 0.7 : 1 }]}>
+                <View style={styles.archiveDot} />
+                <Text style={[styles.archiveRowText, { color: theme.text }]} numberOfLines={1}>
+                  {item.title}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Text style={[styles.title, { color: theme.text }]}>Aufgaben</Text>
@@ -284,9 +334,11 @@ export default function AufgabenScreen() {
             </View>
           )}
           <FlatList
-            data={tasks}
+            data={openTasks}
             keyExtractor={(item) => item.id}
             renderItem={renderTaskItem}
+            ListEmptyComponent={renderOpenEmptyState()}
+            ListFooterComponent={renderArchive()}
             refreshControl={
               <RefreshControl
                 refreshing={isRefreshing}
@@ -488,6 +540,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
+  },
+  openEmptyState: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 8,
+  },
+  openEmptyText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  archiveSection: {
+    marginTop: 4,
+  },
+  archiveHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+  },
+  archiveHeaderText: {
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+  },
+  archiveBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(52, 211, 153, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  archiveBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0f9d64',
+  },
+  archiveList: {
+    gap: 2,
+  },
+  archiveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(128,128,128,0.2)',
+  },
+  archiveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#34d399',
+  },
+  archiveRowText: {
+    flex: 1,
+    fontSize: 13,
+    textDecorationLine: 'line-through',
+    opacity: 0.7,
   },
   emptyTitle: {
     fontSize: 18,

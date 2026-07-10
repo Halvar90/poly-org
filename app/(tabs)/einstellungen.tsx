@@ -59,6 +59,8 @@ export default function EinstellungenScreen() {
   const [inviteCodeInput, setInviteCodeInput] = useState('');
   const [isHouseholdSaving, setIsHouseholdSaving] = useState(false);
   const [householdError, setHouseholdError] = useState<string | null>(null);
+  const [isEditingHouseholdName, setIsEditingHouseholdName] = useState(false);
+  const [householdNameInput, setHouseholdNameInput] = useState('');
 
   useEffect(() => {
     if (profile) {
@@ -266,6 +268,42 @@ export default function EinstellungenScreen() {
       setHousehold(foundHousehold as Household);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Beitritt fehlgeschlagen.';
+      setHouseholdError(message);
+    } finally {
+      setIsHouseholdSaving(false);
+    }
+  }
+
+  function startEditHouseholdName() {
+    if (!household) return;
+    setHouseholdNameInput(household.name);
+    setIsEditingHouseholdName(true);
+  }
+
+  async function saveHouseholdName() {
+    if (!household) return;
+    const trimmedName = householdNameInput.trim();
+
+    if (!trimmedName) {
+      setHouseholdError('Name darf nicht leer sein.');
+      return;
+    }
+
+    setIsHouseholdSaving(true);
+    setHouseholdError(null);
+
+    try {
+      const { error } = await supabase
+        .from('households')
+        .update({ name: trimmedName })
+        .eq('id', household.id);
+
+      if (error) throw error;
+
+      setHousehold({ ...household, name: trimmedName });
+      setIsEditingHouseholdName(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Name konnte nicht gespeichert werden.';
       setHouseholdError(message);
     } finally {
       setIsHouseholdSaving(false);
@@ -502,7 +540,54 @@ export default function EinstellungenScreen() {
                   backgroundColor: colorScheme === 'dark' ? '#252540' : '#f8f8fc',
                 },
               ]}>
-              <Text style={[styles.householdName, { color: theme.text }]}>{household.name}</Text>
+              {isEditingHouseholdName ? (
+                <View style={styles.householdNameEditRow}>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      styles.householdNameInput,
+                      {
+                        color: theme.text,
+                        borderColor: colorScheme === 'dark' ? '#3d3d5c' : '#e0e0e8',
+                        backgroundColor: colorScheme === 'dark' ? '#1e1e33' : '#fff',
+                      },
+                    ]}
+                    value={householdNameInput}
+                    onChangeText={setHouseholdNameInput}
+                    placeholder="Name des Haushalts"
+                    placeholderTextColor={colorScheme === 'dark' ? '#888' : '#999'}
+                    autoFocus
+                  />
+                  <Pressable
+                    onPress={() => {
+                      if (!isHouseholdSaving) void saveHouseholdName();
+                    }}
+                    disabled={isHouseholdSaving}
+                    style={({ pressed }) => [styles.householdNameIconBtn, { opacity: pressed ? 0.7 : 1 }]}>
+                    {isHouseholdSaving ? (
+                      <ActivityIndicator size="small" color={colorCode} />
+                    ) : (
+                      <Ionicons name="checkmark-circle" size={26} color={colorCode} />
+                    )}
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setIsEditingHouseholdName(false)}
+                    disabled={isHouseholdSaving}
+                    style={({ pressed }) => [styles.householdNameIconBtn, { opacity: pressed ? 0.7 : 1 }]}>
+                    <Ionicons name="close-circle" size={26} color="#999" />
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={styles.householdNameRow}>
+                  <Text style={[styles.householdName, { color: theme.text }]}>{household.name}</Text>
+                  <Pressable
+                    onPress={startEditHouseholdName}
+                    style={({ pressed }) => [styles.householdNameIconBtn, { opacity: pressed ? 0.7 : 1 }]}
+                    accessibilityLabel="Haushaltsnamen bearbeiten">
+                    <Ionicons name="create-outline" size={18} color={theme.text} opacity={0.6} />
+                  </Pressable>
+                </View>
+              )}
 
               <View style={styles.householdCodeRow}>
                 <Text style={styles.householdCodeLabel}>Einladungscode</Text>
@@ -785,6 +870,25 @@ const styles = StyleSheet.create({
   householdName: {
     fontSize: 16,
     fontWeight: '700',
+    flex: 1,
+  },
+  householdNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  householdNameEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  householdNameInput: {
+    flex: 1,
+    paddingVertical: 8,
+    fontSize: 15,
+  },
+  householdNameIconBtn: {
+    padding: 2,
   },
   householdCodeRow: {
     flexDirection: 'row',
