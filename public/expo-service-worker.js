@@ -48,13 +48,21 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const targetPath = event.notification.data && event.notification.data.type === 'medication'
+    ? '/erinnerungen'
+    : '/';
+
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if ('focus' in client) return client.focus();
+        if ('focus' in client) {
+          client.focus();
+          if ('navigate' in client) client.navigate(targetPath);
+          return;
+        }
       }
       if (self.clients.openWindow) {
-        return self.clients.openWindow('/');
+        return self.clients.openWindow(targetPath);
       }
       return undefined;
     }),

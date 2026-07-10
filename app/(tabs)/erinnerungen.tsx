@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -33,6 +33,37 @@ type Reminder = {
   assignee_username?: string | null;
 };
 
+type MedicationReminder = {
+  id: string;
+  creator_id: string;
+  medication_name: string;
+  time_of_day: string;
+  interval_days: number;
+  start_date: string;
+  is_active: boolean;
+  last_confirmed_date: string | null;
+};
+
+const INTERVAL_PRESETS = [1, 2, 3, 7];
+
+function getIntervalLabel(days: number) {
+  if (days === 1) return 'täglich';
+  if (days === 7) return 'wöchentlich';
+  return `alle ${days} Tage`;
+}
+
+function getTodayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function isMedicationDueToday(med: MedicationReminder, todayStr: string) {
+  const daysSince = Math.floor(
+    (Date.parse(todayStr) - Date.parse(med.start_date)) / 86_400_000,
+  );
+  return daysSince >= 0 && daysSince % med.interval_days === 0;
+}
+
 export default function ErinnerungenScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
@@ -54,6 +85,14 @@ export default function ErinnerungenScreen() {
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [medications, setMedications] = useState<MedicationReminder[]>([]);
+  const [showAddMedication, setShowAddMedication] = useState(false);
+  const [medName, setMedName] = useState('');
+  const [medTime, setMedTime] = useState('08:00');
+  const [medIntervalDays, setMedIntervalDays] = useState(1);
+  const [isSavingMedication, setIsSavingMedication] = useState(false);
+  const todayStr = getTodayStr();
 
   const profileColor = profile?.color_code ?? theme.tint;
 
@@ -91,10 +130,26 @@ export default function ErinnerungenScreen() {
     }
   }, []);
 
+  const loadMedications = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('medication_reminders')
+        .select('*')
+        .order('time_of_day', { ascending: true });
+
+      if (error) throw error;
+      setMedications((data as MedicationReminder[]) ?? []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Medikamente konnten nicht geladen werden.';
+      setErrorMessage(message);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadReminders();
-    }, [loadReminders]),
+      void loadMedications();
+    }, [loadReminders, loadMedications]),
   );
 
   function handleVoiceConfirm(text: string) {
@@ -304,6 +359,69 @@ export default function ErinnerungenScreen() {
     }
   }
 
+  async function addMedication() {
+    const name = medName.trim();
+    if (!name || !user?.id) return;
+
+    setIsSavingMedication(true);
+    setErrorMessage(null);
+
+    try {
+      const { error } = await supabase.from('medication_reminders').insert({
+        creator_id: user.id,
+        medication_name: name,
+        time_of_day: medTime,
+        interval_days: medIntervalDays,
+      });
+
+      if (error) throw error;
+
+      setMedName('');
+      setMedTime('08:00');
+      setMedIntervalDays(1);
+      setShowAddMedication(false);
+      await loadMedications();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Medikament konnte nicht angelegt werden.';
+      setErrorMessage(message);
+    } finally {
+      setIsSavingMedication(false);
+    }
+  }
+
+  async function setMedicationConfirmed(med: MedicationReminder, confirmed: boolean) {
+    try {
+      const { error } = await supabase
+        .from('medication_reminders')
+        .update({ last_confirmed_date: confirmed ? todayStr : null })
+        .eq('id', med.id);
+
+      if (error) throw error;
+      await loadMedications();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Status konnte nicht aktualisiert werden.';
+      setErrorMessage(message);
+    }
+  }
+
+  function confirmDeleteMedication(med: MedicationReminder) {
+    Alert.alert('Medikament entfernen?', `"${med.medication_name}" wird dauerhaft gelöscht.`, [
+      { text: 'Abbrechen', style: 'cancel' },
+      { text: 'Löschen', style: 'destructive', onPress: () => void deleteMedication(med.id) },
+    ]);
+  }
+
+  async function deleteMedication(id: string) {
+    try {
+      const { error } = await supabase.from('medication_reminders').delete().eq('id', id);
+      if (error) throw error;
+      await loadMedications();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Medikament konnte nicht gelöscht werden.';
+      setErrorMessage(message);
+    }
+  }
+
   const openReminders = useMemo(() => reminders.filter((item) => !item.is_done), [reminders]);
   const doneReminders = useMemo(() => reminders.filter((item) => item.is_done), [reminders]);
   const openCount = openReminders.length;
@@ -422,6 +540,170 @@ export default function ErinnerungenScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}> 
       <Text style={[styles.title, { color: theme.text }]}>Erinnerungen</Text>
       <Text style={styles.subtitle}>Nicht an Termine gebunden - einfach fuer spaeter merken.</Text>
+
+      <View
+        style={[
+          styles.medicationSection,
+          {
+            borderColor: colorScheme === 'dark' ? '#3d3d5c' : '#e0e0e8',
+            backgroundColor: colorScheme === 'dark' ? '#252540' : '#fff',
+          },
+        ]}>
+        <View style={styles.medicationHeaderRow}>
+          <Text style={[styles.medicationHeaderTitle, { color: theme.text }]}>💊 Medikamente</Text>
+          <Pressable
+            onPress={() => setShowAddMedication((v) => !v)}
+            style={({ pressed }) => [
+              styles.medicationAddToggle,
+              { borderColor: profileColor, opacity: pressed ? 0.8 : 1 },
+            ]}
+            accessibilityLabel="Medikament hinzufügen">
+            <Ionicons name={showAddMedication ? 'close' : 'add'} size={18} color={profileColor} />
+          </Pressable>
+        </View>
+
+        {showAddMedication ? (
+          <View style={styles.medicationAddForm}>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  color: theme.text,
+                  borderColor: colorScheme === 'dark' ? '#3d3d5c' : '#e0e0e8',
+                  backgroundColor: colorScheme === 'dark' ? '#1e1e33' : '#f8f8fc',
+                },
+              ]}
+              placeholder="Name des Medikaments"
+              placeholderTextColor={colorScheme === 'dark' ? '#888' : '#999'}
+              value={medName}
+              onChangeText={setMedName}
+            />
+
+            <View style={styles.medicationTimeRow}>
+              <Text style={[styles.medicationFieldLabel, { color: theme.text }]}>Uhrzeit</Text>
+              <input
+                type="time"
+                value={medTime}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setMedTime(e.target.value)}
+                style={{
+                  flex: 1,
+                  borderWidth: 1.5,
+                  borderStyle: 'solid',
+                  borderRadius: 12,
+                  borderColor: colorScheme === 'dark' ? '#3d3d5c' : '#e0e0e8',
+                  backgroundColor: colorScheme === 'dark' ? '#1e1e33' : '#f8f8fc',
+                  color: theme.text,
+                  padding: 10,
+                  fontSize: 14,
+                  fontFamily: 'inherit',
+                }}
+              />
+            </View>
+
+            <Text style={[styles.medicationFieldLabel, { color: theme.text }]}>
+              Wiederholung (bei mehrmals täglich einfach mehrfach mit unterschiedlicher Uhrzeit anlegen)
+            </Text>
+            <View style={styles.intervalRow}>
+              {INTERVAL_PRESETS.map((days) => {
+                const isSelected = medIntervalDays === days;
+                return (
+                  <Pressable
+                    key={days}
+                    onPress={() => setMedIntervalDays(days)}
+                    style={[
+                      styles.intervalChip,
+                      {
+                        borderColor: isSelected ? profileColor : colorScheme === 'dark' ? '#3d3d5c' : '#e0e0e8',
+                        backgroundColor: isSelected ? `${profileColor}18` : colorScheme === 'dark' ? '#1e1e33' : '#f8f8fc',
+                      },
+                    ]}>
+                    <Text style={[styles.intervalChipText, { color: isSelected ? profileColor : theme.text }]}>
+                      {getIntervalLabel(days)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Pressable
+              onPress={() => {
+                if (!isSavingMedication) void addMedication();
+              }}
+              disabled={isSavingMedication || !medName.trim()}
+              style={({ pressed }) => [
+                styles.medicationSaveButton,
+                { backgroundColor: profileColor, opacity: pressed || isSavingMedication || !medName.trim() ? 0.7 : 1 },
+              ]}>
+              {isSavingMedication ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.medicationSaveButtonText}>Hinzufügen</Text>
+              )}
+            </Pressable>
+          </View>
+        ) : null}
+
+        {medications.length === 0 ? (
+          <Text style={styles.medicationEmptyText}>Noch keine Medikamente hinterlegt.</Text>
+        ) : (
+          <View style={styles.medicationList}>
+            {medications.map((med) => {
+              const due = isMedicationDueToday(med, todayStr);
+              const confirmedToday = med.last_confirmed_date === todayStr;
+              return (
+                <View
+                  key={med.id}
+                  style={[
+                    styles.medicationCard,
+                    {
+                      borderColor: due && !confirmedToday ? '#f59e0b' : colorScheme === 'dark' ? '#3d3d5c' : '#e0e0e8',
+                      backgroundColor:
+                        due && !confirmedToday
+                          ? colorScheme === 'dark'
+                            ? '#3d2f14'
+                            : '#fff7e6'
+                          : colorScheme === 'dark'
+                            ? '#1e1e33'
+                            : '#f8f8fc',
+                    },
+                  ]}>
+                  <View style={styles.medicationCardTop}>
+                    <Text style={[styles.medicationName, { color: theme.text }]} numberOfLines={1}>
+                      {med.medication_name}
+                    </Text>
+                    <Pressable onPress={() => confirmDeleteMedication(med)} hitSlop={8}>
+                      <Ionicons name="trash-outline" size={15} color="#d9534f" />
+                    </Pressable>
+                  </View>
+                  <Text style={styles.medicationMeta}>
+                    {med.time_of_day.slice(0, 5)} Uhr · {getIntervalLabel(med.interval_days)}
+                  </Text>
+
+                  {confirmedToday ? (
+                    <Pressable
+                      onPress={() => void setMedicationConfirmed(med, false)}
+                      style={({ pressed }) => [styles.medicationConfirmedBtn, { opacity: pressed ? 0.8 : 1 }]}>
+                      <Ionicons name="checkmark-circle" size={15} color="#34d399" />
+                      <Text style={styles.medicationConfirmedText}>Heute eingenommen</Text>
+                    </Pressable>
+                  ) : due ? (
+                    <Pressable
+                      onPress={() => void setMedicationConfirmed(med, true)}
+                      style={({ pressed }) => [
+                        styles.medicationConfirmBtn,
+                        { backgroundColor: '#f59e0b', opacity: pressed ? 0.85 : 1 },
+                      ]}>
+                      <Text style={styles.medicationConfirmBtnText}>Eingenommen</Text>
+                    </Pressable>
+                  ) : (
+                    <Text style={styles.medicationNotDueText}>Heute nicht fällig</Text>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
 
       <View style={styles.createRow}>
         <View style={styles.createInputsWrap}>
@@ -633,6 +915,129 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#777',
     marginBottom: 14,
+  },
+  medicationSection: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 16,
+    gap: 10,
+  },
+  medicationHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  medicationHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  medicationAddToggle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  medicationAddForm: {
+    gap: 8,
+    paddingTop: 4,
+  },
+  medicationTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  medicationFieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    opacity: 0.8,
+  },
+  intervalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  intervalChip: {
+    borderWidth: 1.5,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  intervalChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  medicationSaveButton: {
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  medicationSaveButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  medicationEmptyText: {
+    fontSize: 13,
+    color: '#888',
+  },
+  medicationList: {
+    gap: 8,
+  },
+  medicationCard: {
+    borderWidth: 1.5,
+    borderRadius: 12,
+    padding: 10,
+    gap: 4,
+  },
+  medicationCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  medicationName: {
+    fontSize: 14,
+    fontWeight: '700',
+    flex: 1,
+  },
+  medicationMeta: {
+    fontSize: 12,
+    color: '#888',
+    fontWeight: '600',
+  },
+  medicationConfirmedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  medicationConfirmedText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#34d399',
+  },
+  medicationConfirmBtn: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginTop: 4,
+  },
+  medicationConfirmBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  medicationNotDueText: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
   },
   createRow: {
     flexDirection: 'row',
