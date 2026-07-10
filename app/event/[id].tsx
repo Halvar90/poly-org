@@ -12,6 +12,8 @@ import {
 
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
+import { useAuth } from '@/contexts/AuthProvider';
+import { Alert } from '@/lib/alert';
 import {
   formatEventSchedule,
   getEntryTypeColorForCreator,
@@ -29,6 +31,7 @@ type DetailEvent = {
   end_time: string | null;
   entry_type: EntryType;
   color_code: string;
+  creator_id: string;
   creator_username: string;
   recurrence_rule?: 'none' | 'weekly' | 'monthly' | null;
   is_done?: boolean;
@@ -48,9 +51,11 @@ export default function EventDetailScreen() {
 
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const { user } = useAuth();
 
   const [event, setEvent] = useState<DetailEvent | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const recurrenceLabel = getRecurrenceLabel(event?.recurrence_rule);
 
@@ -104,6 +109,29 @@ export default function EventDetailScreen() {
     };
   }, [eventId]);
 
+  function confirmDelete() {
+    if (!event) return;
+    Alert.alert('Eintrag löschen?', 'Dieser Eintrag wird dauerhaft entfernt.', [
+      { text: 'Abbrechen', style: 'cancel' },
+      { text: 'Löschen', style: 'destructive', onPress: () => void handleDelete() },
+    ]);
+  }
+
+  async function handleDelete() {
+    if (!event) return;
+    setIsDeleting(true);
+
+    try {
+      const { error } = await supabase.from('events').delete().eq('id', event.id);
+      if (error) throw error;
+      router.back();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Eintrag konnte nicht gelöscht werden.';
+      setErrorMessage(message);
+      setIsDeleting(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <View style={[styles.centered, { backgroundColor: theme.background }]}> 
@@ -133,6 +161,24 @@ export default function EventDetailScreen() {
           <Ionicons name="chevron-back" size={22} color={theme.text} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Eintragsdetails</Text>
+        {event.creator_id === user?.id ? (
+          <Pressable
+            onPress={confirmDelete}
+            disabled={isDeleting}
+            style={({ pressed }) => [
+              styles.backButton,
+              { opacity: pressed || isDeleting ? 0.6 : 1 },
+            ]}
+            accessibilityLabel="Eintrag löschen">
+            {isDeleting ? (
+              <ActivityIndicator size="small" color="#d9534f" />
+            ) : (
+              <Ionicons name="trash-outline" size={20} color="#d9534f" />
+            )}
+          </Pressable>
+        ) : (
+          <View style={styles.backButton} />
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -216,6 +262,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
+    flex: 1,
     fontSize: 19,
     fontWeight: '700',
   },

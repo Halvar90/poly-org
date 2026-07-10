@@ -3,7 +3,7 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -314,6 +314,69 @@ export default function AddEventScreen() {
     }
   }
 
+  function toDateInputValue(date: Date) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  function toTimeInputValue(date: Date) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function getWebInputStyle() {
+    return {
+      flex: 1,
+      borderWidth: 1.5,
+      borderStyle: 'solid' as const,
+      borderRadius: 14,
+      borderColor: colorScheme === 'dark' ? '#3d3d5c' : '#e0e0e8',
+      backgroundColor: colorScheme === 'dark' ? '#252540' : '#f8f8fc',
+      color: theme.text,
+      padding: 14,
+      fontSize: 15,
+      fontFamily: 'inherit',
+    };
+  }
+
+  function renderWebDateTimeInputs(
+    label: string,
+    dateValue: Date,
+    onDateValueChange: (next: Date) => void,
+  ) {
+    return (
+      <View style={styles.pickerGroup}>
+        <Text style={[styles.pickerGroupLabel, { color: theme.text }]}>{label}</Text>
+        <View style={styles.androidPickerRow}>
+          <input
+            type="date"
+            value={toDateInputValue(dateValue)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+              const [y, m, d] = e.target.value.split('-').map(Number);
+              if (!y || !m || !d) return;
+              const next = new Date(dateValue);
+              next.setFullYear(y, m - 1, d);
+              onDateValueChange(next);
+            }}
+            style={getWebInputStyle()}
+          />
+          <input
+            type="time"
+            value={toTimeInputValue(dateValue)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+              const [h, min] = e.target.value.split(':').map(Number);
+              if (Number.isNaN(h) || Number.isNaN(min)) return;
+              const next = new Date(dateValue);
+              next.setHours(h, min, 0, 0);
+              onDateValueChange(next);
+            }}
+            style={getWebInputStyle()}
+          />
+        </View>
+      </View>
+    );
+  }
+
   function renderPickerButtons(
     label: string,
     dateValue: Date,
@@ -577,6 +640,8 @@ export default function AddEventScreen() {
               {entryType === 'abwesenheit' ? 'Von' : 'Datum & Uhrzeit'}
             </Text>
 
+            {Platform.OS === 'web' && renderWebDateTimeInputs('Start', startDate, setStartDate)}
+
             {Platform.OS === 'android' &&
               renderPickerButtons(
                 'Start',
@@ -585,7 +650,7 @@ export default function AddEventScreen() {
                 () => setShowStartTimePicker(true),
               )}
 
-            {(Platform.OS === 'ios' || showStartDatePicker) && (
+            {Platform.OS !== 'web' && (Platform.OS === 'ios' || showStartDatePicker) && (
               <DateTimePicker
                 value={startDate}
                 mode="date"
@@ -595,7 +660,7 @@ export default function AddEventScreen() {
               />
             )}
 
-            {(Platform.OS === 'ios' || showStartTimePicker) && (
+            {Platform.OS !== 'web' && (Platform.OS === 'ios' || showStartTimePicker) && (
               <DateTimePicker
                 value={startDate}
                 mode="time"
@@ -612,6 +677,8 @@ export default function AddEventScreen() {
           <View style={styles.formSection}>
             <Text style={[styles.label, { color: theme.text }]}>Bis</Text>
 
+            {Platform.OS === 'web' && renderWebDateTimeInputs('Ende', endDate, setEndDate)}
+
             {Platform.OS === 'android' &&
               renderPickerButtons(
                 'Ende',
@@ -620,7 +687,7 @@ export default function AddEventScreen() {
                 () => setShowEndTimePicker(true),
               )}
 
-            {(Platform.OS === 'ios' || showEndDatePicker) && (
+            {Platform.OS !== 'web' && (Platform.OS === 'ios' || showEndDatePicker) && (
               <DateTimePicker
                 value={endDate}
                 mode="date"
@@ -630,7 +697,7 @@ export default function AddEventScreen() {
               />
             )}
 
-            {(Platform.OS === 'ios' || showEndTimePicker) && (
+            {Platform.OS !== 'web' && (Platform.OS === 'ios' || showEndTimePicker) && (
               <DateTimePicker
                 value={endDate}
                 mode="time"
