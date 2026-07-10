@@ -3,7 +3,6 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -18,6 +17,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthProvider';
 import { parseEventFromVoice } from '@/lib/aiProcessing';
+import { Alert } from '@/lib/alert';
 import { supabase } from '@/lib/supabase';
 
 type Reminder = {

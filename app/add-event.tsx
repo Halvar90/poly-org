@@ -6,7 +6,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -23,6 +22,7 @@ import VoiceInputModal from '@/components/VoiceInputModal';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthProvider';
+import { Alert } from '@/lib/alert';
 import { sendPushNotification } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
 

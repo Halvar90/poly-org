@@ -3,7 +3,6 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -19,6 +18,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthProvider';
 import { correctNoteText } from '@/lib/aiProcessing';
+import { Alert } from '@/lib/alert';
 import { supabase } from '@/lib/supabase';
 
 type Note = {

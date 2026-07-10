@@ -3,7 +3,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -17,6 +16,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthProvider';
 import { correctDiaryText } from '@/lib/aiProcessing';
+import { Alert } from '@/lib/alert';
 import { supabase } from '@/lib/supabase';
 
 type DiaryEntry = {

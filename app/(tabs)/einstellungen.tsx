@@ -3,7 +3,6 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -18,6 +17,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { GLOBAL_AWAY_COLOR, USER_PALETTES } from '@/constants/UserPalettes';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthProvider';
+import { Alert } from '@/lib/alert';
 import { supabase } from '@/lib/supabase';
 
 type Household = {
