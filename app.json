@@ -8,14 +8,20 @@
     "scheme": "polyorg",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "PolyOrg benötigt Zugriff auf das Mikrofon für die Spracheingabe."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/icon.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -32,12 +38,8 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "PolyOrg benötigt Zugriff auf deine Fotos, um ein Profilbild auszuwählen."
-        }
-      ]
+      "@react-native-community/datetimepicker",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true

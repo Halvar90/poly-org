@@ -1,5 +1,6 @@
 # Lokale Projekt-Infos (API-Keys, Zugangsdaten, Notizen)
 Infos
+audit/
 
 # Dependencies
 node_modules/
@@ -9,6 +10,9 @@ node_modules/
 dist/
 web-build/
 expo-env.d.ts
+
+# Supabase CLI local state
+supabase/.temp/
 
 # Native
 *.jks

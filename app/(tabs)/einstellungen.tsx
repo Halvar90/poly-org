@@ -1,10 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,66 +14,360 @@ import {
   View,
 } from 'react-native';
 
-import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import { GLOBAL_AWAY_COLOR, USER_PALETTES } from '@/constants/UserPalettes';
+import Colors from '@/constants/Colors';
+import { useAuth } from '@/contexts/AuthProvider';
+import { supabase } from '@/lib/supabase';
+
+type Household = {
+  id: string;
+  name: string;
+  invite_code: string;
+};
+
+type HouseholdMember = {
+  id: string;
+  username: string;
+  color_code: string;
+};
+
+function generateInviteCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // ohne O/0/I/1
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
 
 export default function EinstellungenScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const { profile, user, refreshProfile } = useAuth();
 
-  const [name, setName] = useState('');
-  const [avatarUri, setAvatarUri] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [username, setUsername] = useState('');
+  const [colorCode, setColorCode] = useState<string>(USER_PALETTES[0].primary);
+  const [themePreference, setThemePreference] = useState<'system' | 'light' | 'dark'>('system');
+  const [takenPalettePrimaries, setTakenPalettePrimaries] = useState<Set<string>>(new Set());
 
-  function buildAiAvatarUrl(input: string) {
-    const encodedInput = encodeURIComponent(input);
-    return `https://image.pollinations.ai/prompt/cute-modern-abstract-avatar-of-${encodedInput}-vibrant-colors-clean-background?width=512&height=512&nologo=true`;
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const [household, setHousehold] = useState<Household | null>(null);
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([]);
+  const [inviteCodeInput, setInviteCodeInput] = useState('');
+  const [isHouseholdSaving, setIsHouseholdSaving] = useState(false);
+  const [householdError, setHouseholdError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (profile) {
+      setUsername(profile.username);
+      setColorCode(profile.color_code);
+      setThemePreference(profile.theme_preference ?? 'system');
+    }
+  }, [profile?.id, profile?.username, profile?.color_code, profile?.theme_preference]);
+
+  const selectedPalette = USER_PALETTES.find((palette) => palette.primary === colorCode) ?? null;
+
+  function clampColorChannel(value: number) {
+    return Math.max(0, Math.min(255, Math.round(value)));
   }
 
-  async function handleUploadPhoto() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  function hexToRgb(hex: string) {
+    const value = hex.replace('#', '').trim();
+    const normalized =
+      value.length === 3
+        ? value
+            .split('')
+            .map((char) => `${char}${char}`)
+            .join('')
+        : value;
 
-    if (!permission.granted) {
-      Alert.alert(
-        'Zugriff benötigt',
-        'Bitte erlaube PolyOrg den Zugriff auf deine Fotogalerie, um ein Profilbild auszuwählen.',
+    if (normalized.length !== 6) {
+      return { r: 37, g: 99, b: 235 };
+    }
+
+    const r = Number.parseInt(normalized.slice(0, 2), 16);
+    const g = Number.parseInt(normalized.slice(2, 4), 16);
+    const b = Number.parseInt(normalized.slice(4, 6), 16);
+
+    if ([r, g, b].some((channel) => Number.isNaN(channel))) {
+      return { r: 37, g: 99, b: 235 };
+    }
+
+    return { r, g, b };
+  }
+
+  function rgbToHex(r: number, g: number, b: number) {
+    return `#${[r, g, b]
+      .map((channel) => clampColorChannel(channel).toString(16).padStart(2, '0'))
+      .join('')}`;
+  }
+
+  function shadeHexColor(hex: string, factor: number) {
+    const { r, g, b } = hexToRgb(hex);
+    const amount = Math.max(-1, Math.min(1, factor));
+
+    if (amount >= 0) {
+      return rgbToHex(
+        r + (255 - r) * amount,
+        g + (255 - g) * amount,
+        b + (255 - b) * amount,
       );
+    }
+
+    const darken = 1 + amount;
+    return rgbToHex(r * darken, g * darken, b * darken);
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+
+      async function loadTakenPalettes() {
+        const currentUserId = user?.id;
+        if (!currentUserId) {
+          if (isMounted) setTakenPalettePrimaries(new Set());
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, color_code')
+          .neq('id', currentUserId);
+
+        if (error || !isMounted) {
+          return;
+        }
+
+        const taken = new Set<string>();
+        for (const row of (data as Array<{ id: string; color_code: string }>) ?? []) {
+          if (USER_PALETTES.some((palette) => palette.primary === row.color_code)) {
+            taken.add(row.color_code);
+          }
+        }
+
+        setTakenPalettePrimaries(taken);
+      }
+
+      void loadTakenPalettes();
+
+      return () => {
+        isMounted = false;
+      };
+    }, [user?.id]),
+  );
+
+  const loadHouseholdInfo = useCallback(async () => {
+    if (!profile?.household_id) {
+      setHousehold(null);
+      setHouseholdMembers([]);
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
+    const { data: householdData } = await supabase
+      .from('households')
+      .select('id, name, invite_code')
+      .eq('id', profile.household_id)
+      .maybeSingle();
 
-    if (!result.canceled && result.assets[0]) {
-      setIsLoading(true);
-      setAvatarUri(result.assets[0].uri);
+    setHousehold((householdData as Household | null) ?? null);
+
+    const { data: memberData } = await supabase
+      .from('profiles')
+      .select('id, username, color_code')
+      .eq('household_id', profile.household_id);
+
+    setHouseholdMembers((memberData as HouseholdMember[] | null) ?? []);
+  }, [profile?.household_id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadHouseholdInfo();
+    }, [loadHouseholdInfo]),
+  );
+
+  async function handleCreateHousehold() {
+    if (!user?.id) return;
+
+    setIsHouseholdSaving(true);
+    setHouseholdError(null);
+
+    try {
+      let created: Household | null = null;
+
+      for (let attempt = 0; attempt < 5 && !created; attempt++) {
+        const { data, error } = await supabase
+          .from('households')
+          .insert({
+            name: `${username.trim() || 'Unser'} Haushalt`,
+            invite_code: generateInviteCode(),
+            created_by: user.id,
+          })
+          .select('id, name, invite_code')
+          .single();
+
+        if (!error) {
+          created = data as Household;
+        } else if (error.code !== '23505') {
+          throw error;
+        }
+      }
+
+      if (!created) throw new Error('Einladungscode konnte nicht erzeugt werden. Bitte erneut versuchen.');
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ household_id: created.id })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      await refreshProfile();
+      setHousehold(created);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Haushalt konnte nicht erstellt werden.';
+      setHouseholdError(message);
+    } finally {
+      setIsHouseholdSaving(false);
     }
   }
 
-  function handleCreateAiAvatar() {
-    const input = name.trim() || 'Mystery Creature';
-    setIsLoading(true);
-    setAvatarUri(buildAiAvatarUrl(input));
+  async function handleJoinHousehold() {
+    const code = inviteCodeInput.trim().toUpperCase();
+    if (!code || !user?.id) return;
+
+    setIsHouseholdSaving(true);
+    setHouseholdError(null);
+
+    try {
+      const { data: foundHousehold, error } = await supabase
+        .from('households')
+        .select('id, name, invite_code')
+        .eq('invite_code', code)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!foundHousehold) {
+        setHouseholdError('Kein Haushalt mit diesem Code gefunden.');
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ household_id: foundHousehold.id })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      setInviteCodeInput('');
+      await refreshProfile();
+      setHousehold(foundHousehold as Household);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Beitritt fehlgeschlagen.';
+      setHouseholdError(message);
+    } finally {
+      setIsHouseholdSaving(false);
+    }
   }
 
-  function handleImageLoadStart() {
-    setIsLoading(true);
+  function confirmLeaveHousehold() {
+    Alert.alert('Haushalt verlassen?', 'Andere Mitglieder koennen dir dann keine Aufgaben mehr zuweisen.', [
+      { text: 'Abbrechen', style: 'cancel' },
+      { text: 'Verlassen', style: 'destructive', onPress: () => void handleLeaveHousehold() },
+    ]);
   }
 
-  function handleImageLoadEnd() {
-    setIsLoading(false);
+  async function handleLeaveHousehold() {
+    if (!user?.id) return;
+
+    setIsHouseholdSaving(true);
+    setHouseholdError(null);
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ household_id: null })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      await refreshProfile();
+      setHousehold(null);
+      setHouseholdMembers([]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Haushalt konnte nicht verlassen werden.';
+      setHouseholdError(message);
+    } finally {
+      setIsHouseholdSaving(false);
+    }
   }
 
-  function handleImageError() {
-    setIsLoading(false);
-    Alert.alert(
-      'Fehler',
-      'Das KI-Bild konnte nicht geladen werden. Bitte versuche es erneut.',
-    );
+  async function handleSaveProfile() {
+    const trimmedUsername = username.trim();
+
+    if (!trimmedUsername) {
+      Alert.alert('Eingabe prüfen', 'Bitte einen Namen eingeben.');
+      return;
+    }
+
+    if (!user?.id) {
+      Alert.alert('Fehler', 'Kein eingeloggter User gefunden.');
+      return;
+    }
+
+    const userId = user.id;
+
+    if (takenPalettePrimaries.has(colorCode) && profile?.color_code !== colorCode) {
+      Alert.alert('Farbpalette belegt', 'Diese Palette wird bereits von einer anderen Person genutzt.');
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const updatePayload: {
+        username: string;
+        color_code: string;
+        theme_preference: 'system' | 'light' | 'dark';
+      } = {
+        username: trimmedUsername,
+        color_code: colorCode,
+        theme_preference: themePreference,
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(updatePayload)
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      await refreshProfile();
+      Alert.alert('Erfolg', 'Profil aktualisiert!');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Profil konnte nicht gespeichert werden.';
+      Alert.alert('Fehler', message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleSignOut() {
+    setIsSigningOut(true);
+
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Abmelden fehlgeschlagen.';
+      Alert.alert('Fehler', message);
+    } finally {
+      setIsSigningOut(false);
+    }
   }
 
   return (
@@ -87,41 +380,8 @@ export default function EinstellungenScreen() {
         showsVerticalScrollIndicator={false}>
         <Text style={[styles.title, { color: theme.text }]}>Mein Profil</Text>
         <Text style={styles.subtitle}>
-          Passe dein Profil für PolyOrg an – Name, eigenes Foto oder einen
-          KI-generierten Avatar.
+          Passe Name, Farben und Darstellung an.
         </Text>
-
-        <View style={styles.avatarSection}>
-          <View style={[styles.avatarRing, { borderColor: theme.tint }]}>
-            <View style={styles.avatarWrapper}>
-              {avatarUri ? (
-                <Image
-                  source={{ uri: avatarUri }}
-                  style={styles.avatarImage}
-                  onLoadStart={handleImageLoadStart}
-                  onLoadEnd={handleImageLoadEnd}
-                  onError={handleImageError}
-                />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Ionicons name="person" size={56} color={theme.tint} />
-                  <Text style={[styles.avatarHint, { color: theme.tint }]}>
-                    Avatar
-                  </Text>
-                </View>
-              )}
-
-              {isLoading && (
-                <View style={styles.loadingOverlay}>
-                  <ActivityIndicator size="large" color={theme.tint} />
-                  <Text style={[styles.loadingText, { color: theme.tint }]}>
-                    KI malt …
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
 
         <View style={styles.formSection}>
           <Text style={[styles.label, { color: theme.text }]}>Dein Name</Text>
@@ -136,39 +396,243 @@ export default function EinstellungenScreen() {
             ]}
             placeholder="z. B. Bär, Fuchs oder Rabe"
             placeholderTextColor={colorScheme === 'dark' ? '#888' : '#999'}
-            value={name}
-            onChangeText={setName}
+            value={username}
+            onChangeText={setUsername}
             autoCapitalize="words"
             autoCorrect={false}
           />
         </View>
 
+        <View style={styles.colorSection}>
+          <Text style={[styles.label, { color: theme.text }]}>Deine Palette</Text>
+          <Text style={styles.colorHint}>Eine Palette ist exklusiv pro Nutzer:in reserviert.</Text>
+          <View style={styles.paletteList}>
+            {USER_PALETTES.map((palette) => {
+              const isSelected = colorCode === palette.primary;
+              const isTaken = takenPalettePrimaries.has(palette.primary);
+              const isBlocked = isTaken && !isSelected;
+
+              return (
+                <Pressable
+                  key={palette.key}
+                  accessibilityLabel={`Palette ${palette.name}`}
+                  accessibilityState={{ selected: isSelected, disabled: isBlocked }}
+                  onPress={() => {
+                    if (!isBlocked) setColorCode(palette.primary);
+                  }}
+                  style={({ pressed }) => [
+                    styles.paletteCard,
+                    {
+                      borderColor: isSelected ? palette.primary : colorScheme === 'dark' ? '#3d3d5c' : '#e0e0e8',
+                      backgroundColor: colorScheme === 'dark' ? '#252540' : '#f8f8fc',
+                      opacity: isBlocked ? 0.45 : pressed ? 0.85 : 1,
+                    },
+                  ]}>
+                  <View style={styles.paletteSwatchRow}>
+                    <View style={[styles.paletteSwatch, { backgroundColor: shadeHexColor(palette.primary, -0.22) }]} />
+                    <View style={[styles.paletteSwatch, { backgroundColor: shadeHexColor(palette.primary, 0.3) }]} />
+                    <View style={[styles.paletteSwatch, { backgroundColor: GLOBAL_AWAY_COLOR }]} />
+                  </View>
+
+                  <View style={styles.paletteTextWrap}>
+                    <Text style={[styles.paletteName, { color: theme.text }]}>{palette.name}</Text>
+                    <Text style={styles.paletteHint}>Termin dunkel / Aufgabe hell / Abwesenheit rot</Text>
+                  </View>
+
+                  {isBlocked ? (
+                    <Ionicons name="lock-closed-outline" size={18} color={theme.text} />
+                  ) : isSelected ? (
+                    <Ionicons name="checkmark-circle" size={20} color={palette.primary} />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={[styles.colorCode, { color: theme.text }]}> 
+            Aktive Hauptfarbe: {selectedPalette?.primary ?? colorCode}
+          </Text>
+        </View>
+
+        <View style={styles.colorSection}>
+          <Text style={[styles.label, { color: theme.text }]}>Darstellung</Text>
+          <Text style={styles.colorHint}>System oder manuell Hell/Dunkel.</Text>
+          <View style={styles.themeRow}>
+            {([
+              { key: 'system', label: 'System', icon: 'phone-portrait-outline' },
+              { key: 'light', label: 'Hell', icon: 'sunny-outline' },
+              { key: 'dark', label: 'Dunkel', icon: 'moon-outline' },
+            ] as const).map((option) => {
+              const isSelected = themePreference === option.key;
+              return (
+                <Pressable
+                  key={option.key}
+                  onPress={() => setThemePreference(option.key)}
+                  style={({ pressed }) => [
+                    styles.themeOption,
+                    {
+                      borderColor: isSelected ? colorCode : colorScheme === 'dark' ? '#3d3d5c' : '#e0e0e8',
+                      backgroundColor: isSelected ? `${colorCode}20` : colorScheme === 'dark' ? '#252540' : '#f8f8fc',
+                      opacity: pressed ? 0.85 : 1,
+                    },
+                  ]}>
+                  <Ionicons name={option.icon} size={16} color={isSelected ? colorCode : theme.text} />
+                  <Text style={[styles.themeOptionText, { color: isSelected ? colorCode : theme.text }]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.colorSection}>
+          <Text style={[styles.label, { color: theme.text }]}>Haushalt</Text>
+          <Text style={styles.colorHint}>
+            Verbinde dich mit deinem Haushalt, um Aufgaben und Erinnerungen gezielt zuweisen zu koennen.
+          </Text>
+
+          {householdError ? <Text style={styles.householdErrorText}>{householdError}</Text> : null}
+
+          {household ? (
+            <View
+              style={[
+                styles.householdCard,
+                {
+                  borderColor: colorScheme === 'dark' ? '#3d3d5c' : '#e0e0e8',
+                  backgroundColor: colorScheme === 'dark' ? '#252540' : '#f8f8fc',
+                },
+              ]}>
+              <Text style={[styles.householdName, { color: theme.text }]}>{household.name}</Text>
+
+              <View style={styles.householdCodeRow}>
+                <Text style={styles.householdCodeLabel}>Einladungscode</Text>
+                <Text style={[styles.householdCode, { color: colorCode }]}>{household.invite_code}</Text>
+              </View>
+              <Text style={styles.colorHint}>Teile diesen Code, damit weitere Personen beitreten koennen.</Text>
+
+              <View style={styles.householdMembersWrap}>
+                {householdMembers.map((member) => (
+                  <View key={member.id} style={styles.householdMemberChip}>
+                    <View style={[styles.householdMemberDot, { backgroundColor: member.color_code }]} />
+                    <Text style={[styles.householdMemberName, { color: theme.text }]}>{member.username}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <Pressable
+                onPress={confirmLeaveHousehold}
+                disabled={isHouseholdSaving}
+                style={({ pressed }) => [
+                  styles.leaveHouseholdButton,
+                  { opacity: pressed || isHouseholdSaving ? 0.75 : 1 },
+                ]}>
+                <Ionicons name="exit-outline" size={16} color="#d9534f" />
+                <Text style={styles.leaveHouseholdText}>Haushalt verlassen</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.householdSetupWrap}>
+              <Pressable
+                onPress={() => {
+                  if (!isHouseholdSaving) void handleCreateHousehold();
+                }}
+                disabled={isHouseholdSaving}
+                style={({ pressed }) => [
+                  styles.householdActionButton,
+                  {
+                    backgroundColor: colorCode,
+                    opacity: pressed || isHouseholdSaving ? 0.85 : 1,
+                  },
+                ]}>
+                {isHouseholdSaving ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="home-outline" size={18} color="#fff" />
+                    <Text style={styles.householdActionButtonText}>Haushalt erstellen</Text>
+                  </>
+                )}
+              </Pressable>
+
+              <Text style={[styles.colorHint, { textAlign: 'center', marginBottom: 0 }]}>oder</Text>
+
+              <View style={styles.householdJoinRow}>
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.householdJoinInput,
+                    {
+                      color: theme.text,
+                      borderColor: colorScheme === 'dark' ? '#3d3d5c' : '#e0e0e8',
+                      backgroundColor: colorScheme === 'dark' ? '#252540' : '#f8f8fc',
+                    },
+                  ]}
+                  placeholder="Einladungscode"
+                  placeholderTextColor={colorScheme === 'dark' ? '#888' : '#999'}
+                  value={inviteCodeInput}
+                  onChangeText={setInviteCodeInput}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={6}
+                />
+                <Pressable
+                  onPress={() => {
+                    if (!isHouseholdSaving) void handleJoinHousehold();
+                  }}
+                  disabled={isHouseholdSaving || !inviteCodeInput.trim()}
+                  style={({ pressed }) => [
+                    styles.householdJoinButton,
+                    {
+                      borderColor: colorCode,
+                      opacity: pressed || isHouseholdSaving || !inviteCodeInput.trim() ? 0.6 : 1,
+                    },
+                  ]}>
+                  <Text style={[styles.householdJoinButtonText, { color: colorCode }]}>Beitreten</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+        </View>
+
         <View style={styles.buttonGroup}>
           <Pressable
             style={({ pressed }) => [
-              styles.primaryButton,
-              { backgroundColor: theme.tint, opacity: pressed ? 0.85 : 1 },
+              styles.saveButton,
+              {
+                backgroundColor: colorCode,
+                opacity: pressed || isSaving ? 0.85 : 1,
+              },
             ]}
-            onPress={handleUploadPhoto}>
-            <Ionicons name="image-outline" size={20} color="#fff" />
-            <Text style={styles.primaryButtonText}>Eigenes Foto hochladen</Text>
+            onPress={handleSaveProfile}
+            disabled={isSaving}>
+            {isSaving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="save-outline" size={20} color="#fff" />
+                <Text style={styles.saveButtonText}>Profil speichern</Text>
+              </>
+            )}
           </Pressable>
 
           <Pressable
             style={({ pressed }) => [
-              styles.secondaryButton,
+              styles.signOutButton,
               {
-                borderColor: theme.tint,
-                backgroundColor: colorScheme === 'dark' ? '#252540' : '#fff',
-                opacity: pressed || isLoading ? 0.85 : 1,
+                borderColor: '#d9534f',
+                opacity: pressed || isSigningOut ? 0.85 : 1,
               },
             ]}
-            onPress={handleCreateAiAvatar}
-            disabled={isLoading}>
-            <Ionicons name="sparkles-outline" size={20} color={theme.tint} />
-            <Text style={[styles.secondaryButtonText, { color: theme.tint }]}>
-              KI-Avatar erstellen
-            </Text>
+            onPress={handleSignOut}
+            disabled={isSigningOut}>
+            {isSigningOut ? (
+              <ActivityIndicator color="#d9534f" />
+            ) : (
+              <>
+                <Ionicons name="log-out-outline" size={20} color="#d9534f" />
+                <Text style={styles.signOutButtonText}>Abmelden</Text>
+              </>
+            )}
           </Pressable>
         </View>
       </ScrollView>
@@ -200,58 +664,100 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     paddingHorizontal: 8,
   },
-  avatarSection: {
-    alignItems: 'center',
-    marginBottom: 36,
-  },
-  avatarRing: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    borderWidth: 3,
-    padding: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarWrapper: {
-    width: 128,
-    height: 128,
-    borderRadius: 64,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  avatarImage: {
-    width: 128,
-    height: 128,
-    borderRadius: 64,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.75)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderRadius: 64,
-  },
-  loadingText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  avatarPlaceholder: {
-    width: 128,
-    height: 128,
-    borderRadius: 64,
-    backgroundColor: '#f0edf7',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  avatarHint: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
   formSection: {
+    marginBottom: 24,
+  },
+  colorSection: {
     marginBottom: 28,
+  },
+  colorHint: {
+    fontSize: 13,
+    color: '#888',
+    marginBottom: 14,
+  },
+  colorPickerRow: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  paletteList: {
+    gap: 10,
+  },
+  paletteCard: {
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  paletteSwatchRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  paletteSwatch: {
+    width: 16,
+    height: 16,
+    borderRadius: 5,
+  },
+  paletteTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  paletteName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  paletteHint: {
+    fontSize: 11,
+    color: '#888',
+  },
+  themeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  themeOption: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  themeOptionText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  colorOptionOuter: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  colorOptionOuterSelected: {
+    borderColor: '#1a1a2e',
+    borderWidth: 3,
+  },
+  colorOption: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  colorCode: {
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   label: {
     fontSize: 15,
@@ -265,23 +771,127 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 16,
   },
+  householdErrorText: {
+    color: '#d9534f',
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  householdCard: {
+    borderWidth: 1.5,
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
+  },
+  householdName: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  householdCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  householdCodeLabel: {
+    fontSize: 12,
+    color: '#888',
+    fontWeight: '600',
+  },
+  householdCode: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 3,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  householdMembersWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  householdMemberChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.04)',
+  },
+  householdMemberDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  householdMemberName: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  leaveHouseholdButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 4,
+    paddingVertical: 8,
+  },
+  leaveHouseholdText: {
+    color: '#d9534f',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  householdSetupWrap: {
+    gap: 12,
+  },
+  householdActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    minHeight: 50,
+  },
+  householdActionButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  householdJoinRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  householdJoinInput: {
+    flex: 1,
+    textTransform: 'uppercase',
+  },
+  householdJoinButton: {
+    borderWidth: 1.5,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  householdJoinButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
   buttonGroup: {
     gap: 12,
   },
-  primaryButton: {
+  saveButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
     paddingVertical: 16,
     borderRadius: 14,
+    minHeight: 54,
   },
-  primaryButtonText: {
+  saveButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  secondaryButton: {
+  signOutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -289,8 +899,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 14,
     borderWidth: 2,
+    marginTop: 8,
   },
-  secondaryButtonText: {
+  signOutButtonText: {
+    color: '#d9534f',
     fontSize: 16,
     fontWeight: '600',
   },

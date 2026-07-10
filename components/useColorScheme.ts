@@ -1,6 +1,13 @@
 import { useColorScheme as useColorSchemeCore } from 'react-native';
 
-export function useColorScheme() {
+import { useOptionalAuth } from '@/contexts/AuthProvider';
+
+export function useColorScheme(): 'light' | 'dark' {
+  const auth = useOptionalAuth();
+  const themePreference = auth?.profile?.theme_preference ?? 'system';
   const coreScheme = useColorSchemeCore();
-  return coreScheme === 'unspecified' ? 'light' : coreScheme;
+  if (themePreference === 'light' || themePreference === 'dark') {
+    return themePreference;
+  }
+  return coreScheme === 'dark' ? 'dark' : 'light';
 }
