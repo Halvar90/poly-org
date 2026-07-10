@@ -38,6 +38,7 @@
   "devDependencies": {
     "@types/lodash": "^4.17.24",
     "@types/react": "~19.1.10",
+    "serve": "^14.2.6",
     "supabase": "^2.108.0",
     "typescript": "~5.9.2"
   }
