@@ -1,5 +1,6 @@
 import { AudioModule, RecordingPresets, useAudioRecorder } from 'expo-audio';
 import { useCallback, useState } from 'react';
+import { Platform } from 'react-native';
 
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY ?? '';
 
@@ -42,7 +43,12 @@ export function useVoiceInput() {
       }
 
       const formData = new FormData();
-      formData.append('file', { uri, type: 'audio/m4a', name: 'voice.m4a' } as unknown as Blob);
+      if (Platform.OS === 'web') {
+        const blob = await fetch(uri).then((res) => res.blob());
+        formData.append('file', blob, 'voice.webm');
+      } else {
+        formData.append('file', { uri, type: 'audio/m4a', name: 'voice.m4a' } as unknown as Blob);
+      }
       formData.append('model', 'whisper-large-v3');
       formData.append('language', 'de');
 

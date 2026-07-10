@@ -10,8 +10,10 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "PolyOrg benötigt Zugriff auf das Mikrofon für die Spracheingabe."
-      }
+        "NSMicrophoneUsageDescription": "PolyOrg benötigt Zugriff auf das Mikrofon für die Spracheingabe.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.halvar90.polyorg"
     },
     "android": {
       "adaptiveIcon": {
@@ -20,8 +22,10 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.RECORD_AUDIO"
-      ]
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "com.ted_dy.polyorg"
     },
     "web": {
       "bundler": "metro",
@@ -43,6 +47,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "75611a7e-7e24-45e3-8963-5ca6ed15f78a"
+      }
     }
   }
 }
