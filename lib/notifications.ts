@@ -7,6 +7,13 @@ import { supabase } from '@/lib/supabase';
 export async function registerPushToken(userId: string): Promise<void> {
   if (Platform.OS === 'web') return;
 
+  const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
+  if (!projectId) {
+    // Kein EAS-Projekt verknuepft - Push-Tokens koennen noch nicht ausgestellt
+    // werden. Sobald ein EAS-Projekt konfiguriert ist, greift dieser Guard nicht mehr.
+    return;
+  }
+
   try {
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
@@ -25,10 +32,7 @@ export async function registerPushToken(userId: string): Promise<void> {
 
     if (finalStatus !== 'granted') return;
 
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
-    const tokenData = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : undefined,
-    );
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
 
     await supabase
       .from('profiles')
