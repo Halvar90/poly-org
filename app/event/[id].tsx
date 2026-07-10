@@ -9,6 +9,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
@@ -51,6 +52,7 @@ export default function EventDetailScreen() {
 
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
   const [event, setEvent] = useState<DetailEvent | null>(null);
@@ -153,7 +155,7 @@ export default function EventDetailScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}> 
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, { paddingTop: insets.top + 8 }]}>
         <Pressable
           onPress={() => router.back()}
           style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.75 : 1 }]}
