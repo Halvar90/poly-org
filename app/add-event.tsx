@@ -711,7 +711,11 @@ export default function AddEventScreen() {
         )}
 
         {entryType === 'aufgabe' && !hasReminder && (
-          <View style={styles.infoBox}>
+          <View
+            style={[
+              styles.infoBox,
+              { backgroundColor: colorScheme === 'dark' ? '#2d2a45' : '#f0edf7' },
+            ]}>
             <Ionicons name="information-circle-outline" size={18} color={profileColor} />
             <Text style={[styles.infoText, { color: theme.text }]}>
               Diese Aufgabe hat kein Datum und erscheint nicht im Kalender.
@@ -720,7 +724,11 @@ export default function AddEventScreen() {
         )}
 
         {entryType === 'erinnerung' && (
-          <View style={styles.infoBox}>
+          <View
+            style={[
+              styles.infoBox,
+              { backgroundColor: colorScheme === 'dark' ? '#2d2a45' : '#f0edf7' },
+            ]}>
             <Ionicons name="information-circle-outline" size={18} color={profileColor} />
             <Text style={[styles.infoText, { color: theme.text }]}>
               Erinnerungen sind nicht an Kalenderdaten gebunden und erscheinen nur im Erinnerungen-Reiter.

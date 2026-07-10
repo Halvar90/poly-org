@@ -369,7 +369,14 @@ export default function KalenderScreen() {
           </View>
         </View>
 
-        <View style={styles.creatorLegendWrap}>
+        <View
+          style={[
+            styles.creatorLegendWrap,
+            {
+              backgroundColor: colorScheme === 'dark' ? '#252540' : '#f8f8fc',
+              borderColor: colorScheme === 'dark' ? '#3d3d5c' : '#d0d0d8',
+            },
+          ]}>
           <Text style={[styles.creatorLegendTitle, { color: theme.text }]}>Weitere Nutzer</Text>
           {otherCreators.length === 0 ? (
             <Text style={styles.creatorLegendEmpty}>Noch keine weiteren Nutzer sichtbar.</Text>

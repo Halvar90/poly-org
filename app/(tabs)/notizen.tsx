@@ -277,7 +277,14 @@ export default function NotizenScreen() {
       {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
       {editingNote ? (
-        <View style={styles.editPanel}>
+        <View
+          style={[
+            styles.editPanel,
+            {
+              backgroundColor: colorScheme === 'dark' ? '#252540' : '#f8f8fc',
+              borderColor: colorScheme === 'dark' ? '#3d3d5c' : '#d0d0d8',
+            },
+          ]}>
           <Text style={[styles.editTitle, { color: theme.text }]}>Notiz bearbeiten</Text>
           <TextInput
             style={[
