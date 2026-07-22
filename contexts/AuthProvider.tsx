@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { AppState } from 'react-native';
 import type { Session, User } from '@supabase/supabase-js';
 import type { ProfileIconValue } from '@/lib/profileIcons';
 
@@ -129,9 +130,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     async function initAuth() {
+      let loadingResolved = false;
+      const finishLoading = () => {
+        if (isMounted && !loadingResolved) {
+          loadingResolved = true;
+          setIsLoading(false);
+          void SplashScreen.hideAsync();
+        }
+      };
+
+      // Sicherheitsnetz gegen ein bekanntes Supabase-Problem: getSession() kann
+      // nach dem Aufwecken der App aus dem Hintergrund hängen bleiben (interner
+      // Refresh-Lock wird nicht sauber freigegeben). Ohne Timeout bliebe der
+      // Ladekreis dann für immer stehen, bis man die Seite manuell neu lädt.
+      const timeoutId = setTimeout(finishLoading, 8000);
+
       const {
         data: { session: initialSession },
       } = await supabase.auth.getSession();
+      clearTimeout(timeoutId);
 
       if (!isMounted) return;
 
@@ -145,10 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
       }
 
-      if (isMounted) {
-        setIsLoading(false);
-        await SplashScreen.hideAsync();
-      }
+      finishLoading();
     }
 
     initAuth();
@@ -173,6 +187,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       isMounted = false;
       subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+
+      supabase.auth.getSession().then(({ data: { session: refreshedSession } }) => {
+        if (isMounted) setSession(refreshedSession);
+      });
+    });
+
+    return () => {
+      isMounted = false;
+      appStateSubscription.remove();
     };
   }, []);
 
