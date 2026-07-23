@@ -168,20 +168,31 @@ export default function EinstellungenScreen() {
       return;
     }
 
-    const { data: householdData } = await supabase
+    const { data: householdData, error: householdFetchError } = await supabase
       .from('households')
       .select('id, name, invite_code')
       .eq('id', profile.household_id)
       .maybeSingle();
 
-    setHousehold((householdData as Household | null) ?? null);
+    if (householdFetchError) {
+      // Bei einem transienten Fehler (z. B. Token-Refresh nach App-Resume noch
+      // nicht abgeschlossen) den bisherigen Stand behalten statt den Haushalt
+      // fälschlich als "verlassen" anzuzeigen.
+      console.warn('Haushalt konnte nicht geladen werden:', householdFetchError.message);
+    } else {
+      setHousehold((householdData as Household | null) ?? null);
+    }
 
-    const { data: memberData } = await supabase
+    const { data: memberData, error: membersFetchError } = await supabase
       .from('profiles')
       .select('id, username, color_code')
       .eq('household_id', profile.household_id);
 
-    setHouseholdMembers((memberData as HouseholdMember[] | null) ?? []);
+    if (membersFetchError) {
+      console.warn('Haushaltsmitglieder konnten nicht geladen werden:', membersFetchError.message);
+    } else {
+      setHouseholdMembers((memberData as HouseholdMember[] | null) ?? []);
+    }
   }, [profile?.household_id]);
 
   useFocusEffect(

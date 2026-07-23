@@ -196,8 +196,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const appStateSubscription = AppState.addEventListener('change', (nextState) => {
       if (nextState !== 'active') return;
 
-      supabase.auth.getSession().then(({ data: { session: refreshedSession } }) => {
-        if (isMounted) setSession(refreshedSession);
+      supabase.auth.getSession().then(async ({ data: { session: refreshedSession } }) => {
+        if (!isMounted) return;
+        setSession(refreshedSession);
+
+        // Ohne diesen Reload kann `profile` (und damit household_id) nach dem
+        // Aufwecken aus dem Hintergrund veraltet bleiben, während Screens ihre
+        // haushaltsbezogenen Daten per useFocusEffect schon neu laden.
+        if (refreshedSession?.user) {
+          const refreshedProfile = await loadProfile(refreshedSession.user.id);
+          if (isMounted) setProfile(refreshedProfile);
+        }
       });
     });
 
